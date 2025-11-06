@@ -55,8 +55,10 @@ class CompletionRequest(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str = Field(..., pattern="^(system|user|assistant)$")
-    content: str
+    role: str = Field(..., pattern="^(system|user|assistant|tool)$")
+    content: Optional[Any] = None
+    name: Optional[str] = None
+    tool_call_id: Optional[str] = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -358,7 +360,9 @@ async def generate_chat_stream(
     """Generate streaming chat completion response."""
     completion_id = f"chatcmpl-{uuid.uuid4()}"
     created = int(time.time())
-    prompt_contents = "\n\n".join(message.content for message in messages)
+    prompt_contents = "\n\n".join(
+        _normalise_message_content(message.content) for message in messages
+    )
     prompt_token_estimate = count_tokens(prompt_contents)
     token_count = 0
 
@@ -476,10 +480,19 @@ async def generate_chat_stream(
 
 def format_chat_messages_for_runner(messages: List[ChatMessage]) -> List[Dict[str, str]]:
     """Convert chat messages to format expected by MLXRunner.
-    
+
     Returns messages in dict format for the runner to apply chat templates.
     """
-    return [{"role": msg.role, "content": msg.content} for msg in messages]
+    normalised = []
+    for msg in messages:
+        role = msg.role
+        if role == "tool":
+            role = "assistant"
+        content = _normalise_message_content(msg.content)
+        if msg.name:
+            content = f"{msg.name}: {content}"
+        normalised.append({"role": role, "content": content})
+    return normalised
 
 
 def count_tokens(text: str) -> int:
@@ -578,6 +591,27 @@ async def _error_event_stream(
     }
     yield f"data: {json.dumps(payload)}\n\n"
     yield "data: [DONE]\n\n"
+
+
+def _normalise_message_content(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text" and "text" in item:
+                    parts.append(str(item["text"]))
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    if isinstance(content, dict):
+        return json.dumps(content, ensure_ascii=False)
+    return str(content)
 
 
 @asynccontextmanager
@@ -814,7 +848,7 @@ async def create_chat_completion(request: ChatCompletionRequest):
 
             # Convert messages to dict format for runner
             message_dicts = format_chat_messages_for_runner(request.messages)
-            
+
             # Let the runner format with chat templates
             prompt = runner._format_conversation(message_dicts, use_chat_template=True)
 
@@ -828,7 +862,9 @@ async def create_chat_completion(request: ChatCompletionRequest):
             )
 
             # Token counting
-            total_prompt = "\n\n".join([msg.content for msg in request.messages])
+            total_prompt = "\n\n".join(
+                _normalise_message_content(msg.content) for msg in request.messages
+            )
             prompt_tokens = count_tokens(total_prompt)
             completion_tokens = count_tokens(generated_text)
 
