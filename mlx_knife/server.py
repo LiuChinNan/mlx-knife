@@ -282,6 +282,9 @@ async def generate_chat_stream(
     """Generate streaming chat completion response."""
     completion_id = f"chatcmpl-{uuid.uuid4()}"
     created = int(time.time())
+    prompt_contents = "\n\n".join(message.content for message in messages)
+    prompt_token_estimate = count_tokens(prompt_contents)
+    token_count = 0
 
     try:
         message_dicts = format_chat_messages_for_runner(messages)
@@ -312,6 +315,7 @@ async def generate_chat_stream(
             use_chat_template=False,  # Already applied in _format_conversation
             use_chat_stop_tokens=False  # Server mode shouldn't stop on chat markers
         ):
+            token_count += 1
             chunk_response = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
@@ -328,7 +332,6 @@ async def generate_chat_stream(
 
             yield f"data: {json.dumps(chunk_response)}\n\n"
 
-            # Check for stop sequences
             if request.stop:
                 stop_sequences = request.stop if isinstance(request.stop, list) else [request.stop]
                 if any(stop in token for stop in stop_sequences):
@@ -345,7 +348,12 @@ async def generate_chat_stream(
                     "delta": {},
                     "finish_reason": "stop"
                 }
-            ]
+            ],
+            "usage": {
+                "completion_tokens": token_count,
+                "prompt_tokens": prompt_token_estimate,
+                "total_tokens": prompt_token_estimate + token_count,
+            }
         }
 
         yield f"data: {json.dumps(final_response)}\n\n"
@@ -493,7 +501,7 @@ async def create_completion(request: CompletionRequest):
             # Streaming response
             return StreamingResponse(
                 generate_completion_stream(runner, model_key, prompt, request),
-                media_type="text/plain",
+                media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache"}
             )
         else:
@@ -552,7 +560,7 @@ async def create_chat_completion(request: ChatCompletionRequest):
             # Streaming response
             return StreamingResponse(
                 generate_chat_stream(runner, model_key, request.messages, request),
-                media_type="text/plain",
+                media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache"}
             )
         else:
