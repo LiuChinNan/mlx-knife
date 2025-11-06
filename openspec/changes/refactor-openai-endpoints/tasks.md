@@ -23,7 +23,7 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Scope: Standardise error envelopes for both streaming and non-streaming paths, ensuring 4xx/5xx responses include actionable JSON details.  
   Test Plan: Add new tests that simulate missing/invalid models and confirm the response body structure and status codes (including streamed error frames); do not edit existing assertions.
 
-- [ ] Task 4 — `/v1/models` Metadata Expansion  
+- [x] Task 4 — `/v1/models` Metadata Expansion  
   Scope: Extend the model catalogue to expose all healthy MLX models with `type`, `context_length`, and precise error handling for unsupported models.  
   Test Plan: Add fresh unit or integration tests covering mixed chat/base caches and verify the JSON schema plus 404/400 branches without changing existing scenarios.
 

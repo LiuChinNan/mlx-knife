@@ -85,6 +85,7 @@ class ModelInfo(BaseModel):
     owned_by: str = "mlx-knife"
     permission: List = []
     context_length: Optional[int] = None
+    model_type: Optional[str] = None
 
 
 
@@ -563,7 +564,7 @@ async def health_check():
 
 @app.get("/v1/models")
 async def list_models():
-    """List available models (conservative, unchanged by Issue #31)."""
+    """List available MLX models with metadata."""
     from .cache_utils import MODEL_CACHE, cache_dir_to_hf
 
     model_list = []
@@ -573,30 +574,33 @@ async def list_models():
         model_name = cache_dir_to_hf(model_dir.name)
         framework = detect_framework(model_dir, model_name)
 
-        if framework == "MLX" and is_model_healthy(model_name):
-            # Only expose chat-capable models for the chat/completions API
-            try:
-                mtype = detect_model_type(model_dir, model_name)
-            except Exception:
-                mtype = "base"
-            if mtype != "chat":
-                continue
-            # Get model context length (best effort)
-            context_length = None
-            try:
-                model_path_tuple = get_model_path(model_name)
-                if model_path_tuple and model_path_tuple[0]:
-                    from .mlx_runner import get_model_context_length
-                    context_length = get_model_context_length(str(model_path_tuple[0]))
-            except Exception:
-                pass
+        if framework != "MLX":
+            continue
 
-            model_list.append(ModelInfo(
-                id=model_name,
-                object="model",
-                owned_by="mlx-knife",
-                context_length=context_length
-            ))
+        if not is_model_healthy(model_name):
+            continue
+
+        try:
+            model_type = detect_model_type(model_dir, model_name)
+        except Exception:
+            model_type = "base"
+
+        context_length = None
+        try:
+            model_path_tuple = get_model_path(model_name)
+            if model_path_tuple and model_path_tuple[0]:
+                from .mlx_runner import get_model_context_length
+                context_length = get_model_context_length(str(model_path_tuple[0]))
+        except Exception:
+            context_length = None
+
+        model_list.append(ModelInfo(
+            id=model_name,
+            object="model",
+            owned_by="mlx-knife",
+            context_length=context_length,
+            model_type=model_type,
+        ))
 
     return {"object": "list", "data": model_list}
 
