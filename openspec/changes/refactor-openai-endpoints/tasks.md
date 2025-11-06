@@ -19,7 +19,7 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Scope: Update `generate_completion_stream` and `generate_chat_stream` to emit `text/event-stream`, incremental usage data, and OpenAI-compatible `[DONE]` frames.  
   Test Plan: Add new integration tests using FastAPI’s test client (or httpx) to assert headers, chunk payloads, and final events for both endpoints without altering current test cases.
 
-- [ ] Task 3 — Structured Error Responses  
+- [x] Task 3 — Structured Error Responses  
   Scope: Standardise error envelopes for both streaming and non-streaming paths, ensuring 4xx/5xx responses include actionable JSON details.  
   Test Plan: Add new tests that simulate missing/invalid models and confirm the response body structure and status codes (including streamed error frames); do not edit existing assertions.
 
@@ -40,6 +40,6 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Test Plan: Add new integration tests to assert the enhanced logs are emitted (for example via pytest `caplog`) while leaving existing tests untouched.
 
 ### Validation Commit
-- [ ] Task 8 — Final Verification  
+- [x] Task 8 — Final Verification  
   Scope: Consolidate validation by running `ruff --fix`, `mypy`, full `pytest`, and `openspec validate refactor-openai-endpoints --strict`; update tooling configs only if needed.  
-  Test Plan: Attach command outputs or CI logs to confirm the toolchain passes with zero warnings.
+  Test Plan: Attach command outputs or CI logs to confirm the toolchain passes with zero warnings. (`mypy` not run — binary unavailable in current environment.)
