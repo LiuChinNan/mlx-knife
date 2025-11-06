@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .cache_utils import (
@@ -137,13 +137,37 @@ def get_or_load_model(model_spec: str, verbose: bool = False) -> Tuple[MLXRunner
     try:
         model_path, model_name, commit_hash = get_model_path(model_spec)
         if model_path is None or not model_path.exists():
-            raise HTTPException(status_code=404, detail=f"Model {model_spec} not found in cache")
+            raise HTTPException(
+                status_code=404,
+                detail=_build_error_detail(
+                    "model_not_found",
+                    f"Model {model_spec} not found in cache",
+                    model=model_spec,
+                    status_code=404,
+                ),
+            )
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Model {model_spec} not found: {str(e)}")
+        raise HTTPException(
+            status_code=404,
+            detail=_build_error_detail(
+                "model_not_found",
+                f"Model {model_spec} not found: {str(e)}",
+                model=model_spec,
+                status_code=404,
+            ),
+        )
 
     framework = detect_framework(model_path.parent.parent, model_name)
     if framework != "MLX":
-        raise HTTPException(status_code=400, detail=f"Model {model_name} is not a valid MLX model (Framework: {framework})")
+        raise HTTPException(
+            status_code=400,
+            detail=_build_error_detail(
+                "invalid_model_framework",
+                f"Model {model_name} is not a valid MLX model (Framework: {framework})",
+                model=model_name,
+                status_code=400,
+            ),
+        )
 
     model_path_str = str(model_path)
 
@@ -252,6 +276,7 @@ async def generate_completion_stream(
         yield "data: [DONE]\n\n"
 
     except Exception as e:
+        error_detail, _ = _exception_to_error_detail(e, model=request.model)
         error_response = {
             "id": completion_id,
             "object": "text_completion",
@@ -265,7 +290,7 @@ async def generate_completion_stream(
                     "finish_reason": "error"
                 }
             ],
-            "error": str(e)
+            "error": error_detail["error"]
         }
         yield f"data: {json.dumps(error_response)}\n\n"
         yield "data: [DONE]\n\n"
@@ -360,6 +385,7 @@ async def generate_chat_stream(
         yield "data: [DONE]\n\n"
 
     except Exception as e:
+        error_detail, _ = _exception_to_error_detail(e, model=request.model)
         error_response = {
             "id": completion_id,
             "object": "chat.completion.chunk",
@@ -372,7 +398,7 @@ async def generate_chat_stream(
                     "finish_reason": "error"
                 }
             ],
-            "error": str(e)
+            "error": error_detail["error"]
         }
         yield f"data: {json.dumps(error_response)}\n\n"
         yield "data: [DONE]\n\n"
@@ -391,6 +417,99 @@ def format_chat_messages_for_runner(messages: List[ChatMessage]) -> List[Dict[st
 def count_tokens(text: str) -> int:
     """Rough token count estimation."""
     return int(len(text.split()) * 1.3)  # Approximation, convert to int
+
+
+def _build_error_detail(
+    error_type: str,
+    message: str,
+    *,
+    model: Optional[str] = None,
+    status_code: Optional[int] = None,
+) -> Dict[str, Dict[str, Any]]:
+    detail: Dict[str, Any] = {"type": error_type, "message": message}
+    if model:
+        detail["model"] = model
+    if status_code is not None:
+        detail["code"] = status_code
+    return {"error": detail}
+
+
+def _normalize_error_detail(
+    detail: Any,
+    default_type: str,
+    default_message: str,
+    *,
+    model: Optional[str] = None,
+    status_code: Optional[int] = None,
+) -> Dict[str, Dict[str, Any]]:
+    if isinstance(detail, dict) and "error" in detail and isinstance(detail["error"], dict):
+        normalized = detail["error"].copy()
+        if model and "model" not in normalized:
+            normalized["model"] = model
+        if status_code is not None and "code" not in normalized:
+            normalized["code"] = status_code
+        return {"error": normalized}
+
+    message = default_message
+    if isinstance(detail, str) and detail:
+        message = detail
+    elif not message:
+        message = "An unexpected error occurred"
+
+    return _build_error_detail(
+        default_type,
+        message,
+        model=model,
+        status_code=status_code,
+    )
+
+
+def _exception_to_error_detail(
+    exc: Exception,
+    *,
+    model: Optional[str] = None,
+    default_status: int = 500,
+) -> Tuple[Dict[str, Dict[str, Any]], int]:
+    if isinstance(exc, HTTPException):
+        status_code = exc.status_code
+        detail = _normalize_error_detail(
+            exc.detail,
+            "http_error",
+            str(exc.detail or exc),
+            model=model,
+            status_code=status_code,
+        )
+        return detail, status_code
+
+    message = str(exc) if str(exc) else "Internal server error"
+    return _build_error_detail(
+        "internal_error",
+        message,
+        model=model,
+        status_code=default_status,
+    ), default_status
+
+
+async def _error_event_stream(
+    *,
+    model: str,
+    prefix: str,
+    object_name: str,
+    choice_payload: Dict[str, Any],
+    error_payload: Dict[str, Any],
+) -> AsyncGenerator[str, None]:
+    completion_id = f"{prefix}-{uuid.uuid4()}"
+    created = int(time.time())
+    payload = {
+        "id": completion_id,
+        "object": object_name,
+        "created": created,
+        "model": model,
+        "choices": [choice_payload],
+        "error": error_payload,
+    }
+    yield f"data: {json.dumps(payload)}\n\n"
+    yield "data: [DONE]\n\n"
 
 
 @asynccontextmanager
@@ -492,7 +611,14 @@ async def create_completion(request: CompletionRequest):
         # Handle array of prompts
         if isinstance(request.prompt, list):
             if len(request.prompt) > 1:
-                raise HTTPException(status_code=400, detail="Multiple prompts not supported yet")
+                raise HTTPException(
+                    status_code=400,
+                    detail=_build_error_detail(
+                        "invalid_request",
+                        "Multiple prompts are not supported yet",
+                        status_code=400,
+                    ),
+                )
             prompt = request.prompt[0]
         else:
             prompt = request.prompt
@@ -542,8 +668,30 @@ async def create_completion(request: CompletionRequest):
 
             return response
 
+    except HTTPException as exc:
+        error_detail, status_code = _exception_to_error_detail(exc, model=request.model)
+        if request.stream:
+            return StreamingResponse(
+                _error_event_stream(
+                    model=request.model,
+                    prefix="cmpl",
+                    object_name="text_completion",
+                    choice_payload={
+                        "index": 0,
+                        "text": "",
+                        "logprobs": None,
+                        "finish_reason": "error",
+                    },
+                    error_payload=error_detail["error"],
+                ),
+                status_code=status_code,
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache"},
+            )
+        return JSONResponse(status_code=status_code, content=error_detail)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_detail, status_code = _exception_to_error_detail(e, model=request.model)
+        return JSONResponse(status_code=status_code, content=error_detail)
     finally:
         if model_key and not request.stream:
             release_runner(model_key)
@@ -611,8 +759,29 @@ async def create_chat_completion(request: ChatCompletionRequest):
 
             return response
 
+    except HTTPException as exc:
+        error_detail, status_code = _exception_to_error_detail(exc, model=request.model)
+        if request.stream:
+            return StreamingResponse(
+                _error_event_stream(
+                    model=request.model,
+                    prefix="chatcmpl",
+                    object_name="chat.completion.chunk",
+                    choice_payload={
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "error",
+                    },
+                    error_payload=error_detail["error"],
+                ),
+                status_code=status_code,
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache"},
+            )
+        return JSONResponse(status_code=status_code, content=error_detail)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_detail, status_code = _exception_to_error_detail(e, model=request.model)
+        return JSONResponse(status_code=status_code, content=error_detail)
     finally:
         if model_key and not request.stream:
             release_runner(model_key)

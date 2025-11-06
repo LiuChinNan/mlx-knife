@@ -2,6 +2,7 @@ import json
 from typing import List
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from mlx_knife import server
@@ -121,3 +122,60 @@ def test_chat_streaming_contract(monkeypatch: pytest.MonkeyPatch, api_client: Te
     assert usage["total_tokens"] >= usage["completion_tokens"]
 
     assert released == ["chat-key"]
+
+
+def test_completion_missing_model_returns_structured_error(api_client: TestClient):
+    payload = {
+        "model": "nonexistent-model",
+        "prompt": "Hello",
+        "stream": False,
+    }
+
+    response = api_client.post("/v1/completions", json=payload)
+    assert response.status_code == 404
+
+    body = response.json()
+    assert "error" in body
+    detail = body["error"]
+    assert detail["type"] == "model_not_found"
+    assert detail["model"] == "nonexistent-model"
+    assert detail["code"] == 404
+    assert "not found" in detail["message"].lower()
+
+
+def test_completion_streaming_missing_model_emits_error_chunk(monkeypatch: pytest.MonkeyPatch, api_client: TestClient):
+    def fake_get_model(model: str):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "type": "model_not_found",
+                    "message": f"Model {model} missing",
+                    "model": model,
+                    "code": 404,
+                }
+            },
+        )
+
+    monkeypatch.setattr(server, "get_or_load_model", fake_get_model)
+
+    payload = {
+        "model": "missing-model",
+        "prompt": "Hello",
+        "stream": True,
+    }
+
+    with api_client.stream("POST", "/v1/completions", json=payload) as response:
+        assert response.status_code == 404
+        assert response.headers.get("content-type", "").startswith("text/event-stream")
+        events = _collect_events(response)
+
+    assert events[-1] == "data: [DONE]"
+    data_events = [evt for evt in events if evt != "data: [DONE]"]
+    assert len(data_events) == 1
+
+    error_payload = json.loads(data_events[0].split("data: ", 1)[1])
+    assert error_payload["choices"][0]["finish_reason"] == "error"
+    assert error_payload["error"]["type"] == "model_not_found"
+    assert error_payload["error"]["model"] == "missing-model"
+    assert error_payload["error"]["code"] == 404
