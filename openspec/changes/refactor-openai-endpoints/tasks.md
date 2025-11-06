@@ -27,7 +27,7 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Scope: Extend the model catalogue to expose all healthy MLX models with `type`, `context_length`, and precise error handling for unsupported models.  
   Test Plan: Add fresh unit or integration tests covering mixed chat/base caches and verify the JSON schema plus 404/400 branches without changing existing scenarios.
 
-- [ ] Task 5 — Structured Logging Hooks  
+- [x] Task 5 — Structured Logging Hooks  
   Scope: Add logging for model load/unload events and stream failures to support operations and side-effect tracking.  
   Test Plan: Add new log-capturing tests (pytest `caplog`) to assert that key events are recorded with expected fields.
 
