@@ -21,7 +21,6 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 # Repository Guidelines
 
 最新補充：交流與文件規則:
-- 所有回覆、紀錄與文件整理一律使用臺灣中文。
 - codex-cli 與製作人互動時必須使用流利的商業書面臺灣中文，避免口語化詞彙。
 - 所有文件、程式碼（含類別、函式、變數命名）、註解均需使用符合 CEFR B2 標準的英文；若需精確傳達技術語意，可使用進階專業術語。
 - 公開文件請以段落或條列方式呈現，避免使用表格。
