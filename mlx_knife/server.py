@@ -5,6 +5,7 @@ Provides REST endpoints for text generation with MLX backend.
 """
 
 import json
+import logging
 import threading
 import time
 import uuid
@@ -25,6 +26,14 @@ from .cache_utils import (
     is_model_healthy,
 )
 from .mlx_runner import MLXRunner
+
+logger = logging.getLogger(__name__)
+
+
+def _log_event(level: int, event: str, **fields: Any) -> None:
+    if not logger.isEnabledFor(level):
+        return
+    logger.log(level, event, extra={"event": event, "fields": fields})
 
 # Global model cache and configuration
 _model_cache: Dict[str, MLXRunner] = {}
@@ -103,6 +112,7 @@ def _cleanup_stale_runners_locked(active_key: str) -> None:
                 runner.cleanup()
             except Exception:
                 pass
+        _log_event(logging.INFO, "cleanup_runner", model_key=key)
 
 
 def release_runner(model_key: str) -> None:
@@ -114,7 +124,14 @@ def release_runner(model_key: str) -> None:
     with _cache_lock:
         if model_key in _runner_ref_counts:
             _runner_ref_counts[model_key] -= 1
-            if _runner_ref_counts[model_key] <= 0:
+            remaining = _runner_ref_counts[model_key]
+            _log_event(
+                logging.DEBUG,
+                "runner_release_reference",
+                model_key=model_key,
+                remaining=max(remaining, 0),
+            )
+            if remaining <= 0:
                 runner = _model_cache.pop(model_key, None)
                 _runner_ref_counts.pop(model_key, None)
                 if runner:
@@ -122,6 +139,7 @@ def release_runner(model_key: str) -> None:
                         runner.cleanup()
                     except Exception:
                         pass
+                _log_event(logging.INFO, "runner_released", model_key=model_key)
                 if _current_model_path == model_key:
                     _current_model_path = None
 
@@ -182,6 +200,21 @@ def get_or_load_model(model_spec: str, verbose: bool = False) -> Tuple[MLXRunner
             runner = MLXRunner(model_path_str, verbose=verbose)
             runner.load_model()
             _model_cache[model_path_str] = runner
+            _log_event(
+                logging.INFO,
+                "runner_loaded",
+                model=model_name,
+                model_key=model_path_str,
+                commit=commit_hash,
+            )
+        else:
+            _log_event(
+                logging.DEBUG,
+                "runner_reused",
+                model=model_name,
+                model_key=model_path_str,
+                commit=commit_hash,
+            )
 
         _runner_ref_counts[model_path_str] = _runner_ref_counts.get(model_path_str, 0) + 1
         _current_model_path = model_path_str
@@ -278,6 +311,13 @@ async def generate_completion_stream(
 
     except Exception as e:
         error_detail, _ = _exception_to_error_detail(e, model=request.model)
+        _log_event(
+            logging.ERROR,
+            "stream_error",
+            mode="completion",
+            model=request.model,
+            error=str(e),
+        )
         error_response = {
             "id": completion_id,
             "object": "text_completion",
@@ -387,6 +427,13 @@ async def generate_chat_stream(
 
     except Exception as e:
         error_detail, _ = _exception_to_error_detail(e, model=request.model)
+        _log_event(
+            logging.ERROR,
+            "stream_error",
+            mode="chat",
+            model=request.model,
+            error=str(e),
+        )
         error_response = {
             "id": completion_id,
             "object": "chat.completion.chunk",
@@ -516,9 +563,9 @@ async def _error_event_stream(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    print("MLX Knife Server starting up...")
+    _log_event(logging.INFO, "server_startup")
     yield
-    print("MLX Knife Server shutting down...")
+    _log_event(logging.INFO, "server_shutdown")
     # Clean up model cache
     global _model_cache, _runner_ref_counts, _current_model_path
     with _cache_lock:

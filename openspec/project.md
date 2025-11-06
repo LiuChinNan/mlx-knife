@@ -55,6 +55,7 @@ This repository is a fork of https://github.com/mzau/mlx-knife. We continue the 
 - Adopt a TDD mindset: define consensus test cases before implementation, add only new tests within a proposal, and never modify existing tests without a separate OpenSpec change.
 - Whenever requirements are unclear, pause work and ask the Producer. Reasoning may be shared as options, but execution requires explicit confirmation unless told otherwise.
 - Git commits must use CEFR B2 English subject lines, reference related issues in the title, and include bullet-point bodies that describe key improvements per file.
+- Disallow `git commit -a`; stage files explicitly with `git add` to maintain precise control over each commit.
 
 ## External Dependencies
 - HuggingFace Hub for cache management and model metadata.

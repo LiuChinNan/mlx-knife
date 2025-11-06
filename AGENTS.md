@@ -32,6 +32,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - 在單一 OpenSpec proposal 期間，只能新增符合團隊共識的測試案例，不得修改既有測試；若需要調整既有測試，必須另開新 proposal。
 - 遇到不明確或含糊的指示時務必停止並向製作人詢問，除非製作人明確要求自行推理；若已進行推理，可先提出推理結論供製作人選擇。
 - Git commit message 必須使用 CEFR B2 英文撰寫標題，標題需附上對應 issue（例如 `(#N)`），內文以條列方式說明各檔案的重要變更，每條格式為 `- \`path/to/file\`: change summary`。
+- 禁止使用 `git commit -a`；每次提交前必須以 `git add` 明確選入檔案，保持提交內容可控。
 
 ## Executing Roles
 
@@ -196,4 +197,3 @@ This fork extends `mzau/mlx-knife`.
 ## Testing Guidelines
 
 ## Commit & Pull Request Guidelines
-
