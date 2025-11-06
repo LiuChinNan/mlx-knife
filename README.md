@@ -171,6 +171,48 @@ curl -X POST "http://localhost:8000/v1/chat/completions" \
 
 **Note**: Tool integrations are community-tested. Some tools may require specific configuration or have compatibility limitations. Please report issues via GitHub.
 
+### API Behaviour Highlights
+
+- **Streaming contract** — Both `/v1/completions` and `/v1/chat/completions` use `Content-Type: text/event-stream` and terminate with `data: [DONE]`. The final chunk includes usage counters:
+
+  ```json
+  data: {
+    "choices": [{"finish_reason": "stop"}],
+    "usage": {"prompt_tokens": 42, "completion_tokens": 128, "total_tokens": 170}
+  }
+  ```
+
+- **Structured errors** — All endpoints return machine-readable failures. Non-streaming responses use JSON, while streaming responses emit an error chunk before `[DONE]`:
+
+  ```json
+  {
+    "error": {
+      "type": "model_not_found",
+      "message": "Model instruct-7b is not in the local cache",
+      "model": "instruct-7b",
+      "code": 404
+    }
+  }
+  ```
+
+- **Model catalogue metadata** — `GET /v1/models` now lists every healthy MLX model (chat and base) and reports ownership, type, and best-effort context length:
+
+  ```json
+  {
+    "object": "list",
+    "data": [
+      {
+        "id": "mlx-community/Phi-3-mini-4k-instruct-4bit",
+        "owned_by": "mlx-knife",
+        "model_type": "chat",
+        "context_length": 4096
+      }
+    ]
+  }
+  ```
+
+Use `_log_event` structured entries in the server logs to trace runner lifecycle events (`runner_loaded`, `runner_released`) and streaming errors when debugging deployments.
+
 ## Command Reference
 
 ### Available Commands

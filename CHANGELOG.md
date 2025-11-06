@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 🔄 API Improvements
+- Standardised `/v1/completions` and `/v1/chat/completions` streaming contract to `text/event-stream`, including final usage tallies and deterministic `[DONE]` termination.
+- Introduced structured error payloads (JSON for non-streaming, SSE error chunks for streaming) with explicit `type`, `message`, `model`, and `code`.
+- Expanded `/v1/models` output to list all healthy MLX models (chat/base) with `model_type`, `context_length`, and ownership metadata.
+- Added structured logging hooks (runner lifecycle, streaming failures, server lifecycle) to simplify debugging and observability.
+
 ## [1.1.1] - 2025-09-14
 
 ### 🆕 **Major New Features**

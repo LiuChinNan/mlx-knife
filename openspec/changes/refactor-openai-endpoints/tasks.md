@@ -31,7 +31,7 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Scope: Add logging for model load/unload events and stream failures to support operations and side-effect tracking.  
   Test Plan: Add new log-capturing tests (pytest `caplog`) to assert that key events are recorded with expected fields.
 
-- [ ] Task 6 — Documentation Update  
+- [x] Task 6 — Documentation Update  
   Scope: Update README/CHANGELOG (and any API docs) to describe the new streaming contract, error format, and model listing semantics.  
   Test Plan: Manual review plus markdown lint (if available) to ensure documentation accuracy; no code tests required.
 
