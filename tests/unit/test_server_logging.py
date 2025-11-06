@@ -91,3 +91,82 @@ def test_streaming_error_logs(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Lo
     assert error_record is not None
     assert error_record.fields["mode"] == "completion"
     assert error_record.fields["model"] == "stub-model"
+
+
+def test_stream_start_and_complete_logs(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    class SuccessfulRunner:
+        def __init__(self, tokens):
+            self.tokens = tokens
+            self.loaded = True
+            self.cleaned = False
+
+        def load_model(self) -> None:
+            self.loaded = True
+
+        def cleanup(self) -> None:
+            self.cleaned = True
+
+        def generate_streaming(self, **_: object):
+            for token in self.tokens:
+                yield token
+
+        def get_effective_max_tokens(self, requested: int | None, interactive: bool = False) -> int:
+            return requested or len(self.tokens)
+
+        def _format_conversation(self, messages, use_chat_template: bool = True) -> str:
+            return "\n".join(entry["content"] for entry in messages)
+
+        def generate_batch(self, **_: object) -> str:
+            return "".join(self.tokens)
+
+    monkeypatch.setattr(server, "get_or_load_model", lambda model: (SuccessfulRunner(["Hello", " world"]), "stub-key"))
+    monkeypatch.setattr(server, "release_runner", lambda model_key: None)
+
+    client = TestClient(server.app)
+    payload = {"model": "stub-model", "prompt": "Hello", "stream": True}
+
+    with caplog.at_level(logging.INFO, logger=server.logger.name):
+        with client.stream("POST", "/v1/completions", json=payload) as response:
+            assert response.status_code == 200
+            list(response.iter_text())
+
+    events = {record.event: record for record in caplog.records if hasattr(record, "event")}
+    assert "stream_start" in events
+    assert events["stream_start"].fields["mode"] == "completion"
+
+    assert "stream_complete" in events
+    complete_fields = events["stream_complete"].fields
+    assert complete_fields["completion_tokens"] == 2
+
+
+def test_generation_complete_logs(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    class BatchRunner:
+        def __init__(self, response: str):
+            self.response = response
+
+        def load_model(self) -> None:
+            pass
+
+        def cleanup(self) -> None:
+            pass
+
+        def get_effective_max_tokens(self, requested: int | None, interactive: bool = False) -> int:
+            return requested or 32
+
+        def generate_batch(self, **_: object) -> str:
+            return self.response
+
+    monkeypatch.setattr(server, "get_or_load_model", lambda model: (BatchRunner("Hi"), "stub-key"))
+    monkeypatch.setattr(server, "release_runner", lambda model_key: None)
+
+    client = TestClient(server.app)
+    payload = {"model": "stub-model", "prompt": "Hello"}
+
+    with caplog.at_level(logging.INFO, logger=server.logger.name):
+        response = client.post("/v1/completions", json=payload)
+        assert response.status_code == 200
+
+    event_record = next((record for record in caplog.records if getattr(record, "event", "") == "generation_complete"), None)
+    assert event_record is not None
+    assert event_record.fields["mode"] == "completion"
+    assert event_record.fields["completion_tokens"] >= 1

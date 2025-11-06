@@ -35,7 +35,7 @@ Each task maps to exactly one commit and includes its dedicated test plan.
   Scope: Update README/CHANGELOG (and any API docs) to describe the new streaming contract, error format, and model listing semantics.  
   Test Plan: Manual review plus markdown lint (if available) to ensure documentation accuracy; no code tests required.
 
-- [ ] Task 7 — Log Observability Enhancements  
+- [x] Task 7 — Log Observability Enhancements  
   Scope: Strengthen existing logging so model switches and stream errors emit structured details sufficient for debugging without adding new external metric endpoints.  
   Test Plan: Add new integration tests to assert the enhanced logs are emitted (for example via pytest `caplog`) while leaving existing tests untouched.
 

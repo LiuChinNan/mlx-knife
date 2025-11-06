@@ -309,6 +309,16 @@ async def generate_completion_stream(
         yield f"data: {json.dumps(final_response)}\n\n"
         yield "data: [DONE]\n\n"
 
+        _log_event(
+            logging.INFO,
+            "stream_complete",
+            mode="completion",
+            model=request.model,
+            prompt_tokens=prompt_token_estimate,
+            completion_tokens=token_count,
+            total_tokens=prompt_token_estimate + token_count,
+        )
+
     except Exception as e:
         error_detail, _ = _exception_to_error_detail(e, model=request.model)
         _log_event(
@@ -424,6 +434,16 @@ async def generate_chat_stream(
 
         yield f"data: {json.dumps(final_response)}\n\n"
         yield "data: [DONE]\n\n"
+
+        _log_event(
+            logging.INFO,
+            "stream_complete",
+            mode="chat",
+            model=request.model,
+            prompt_tokens=prompt_token_estimate,
+            completion_tokens=token_count,
+            total_tokens=prompt_token_estimate + token_count,
+        )
 
     except Exception as e:
         error_detail, _ = _exception_to_error_detail(e, model=request.model)
@@ -676,6 +696,13 @@ async def create_completion(request: CompletionRequest):
 
         if request.stream:
             # Streaming response
+            _log_event(
+                logging.INFO,
+                "stream_start",
+                mode="completion",
+                model=request.model,
+                streaming=True,
+            )
             return StreamingResponse(
                 generate_completion_stream(runner, model_key, prompt, request),
                 media_type="text/event-stream",
@@ -715,6 +742,17 @@ async def create_completion(request: CompletionRequest):
                     "completion_tokens": completion_tokens,
                     "total_tokens": prompt_tokens + completion_tokens
                 }
+            )
+
+            _log_event(
+                logging.INFO,
+                "generation_complete",
+                mode="completion",
+                model=request.model,
+                streaming=False,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
             )
 
             return response
@@ -757,6 +795,13 @@ async def create_chat_completion(request: ChatCompletionRequest):
 
         if request.stream:
             # Streaming response
+            _log_event(
+                logging.INFO,
+                "stream_start",
+                mode="chat",
+                model=request.model,
+                streaming=True,
+            )
             return StreamingResponse(
                 generate_chat_stream(runner, model_key, request.messages, request),
                 media_type="text/event-stream",
@@ -806,6 +851,17 @@ async def create_chat_completion(request: ChatCompletionRequest):
                     "completion_tokens": completion_tokens,
                     "total_tokens": prompt_tokens + completion_tokens
                 }
+            )
+
+            _log_event(
+                logging.INFO,
+                "generation_complete",
+                mode="chat",
+                model=request.model,
+                streaming=False,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
             )
 
             return response
