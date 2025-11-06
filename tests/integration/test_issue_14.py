@@ -8,19 +8,19 @@ This test is self-contained and manages its own MLX Knife server instance.
 """
 
 import logging
+import math
 import os
 import re
-import math
-import subprocess
-from functools import lru_cache
 import signal
 import subprocess
 import time
+from functools import lru_cache
 from typing import List, Tuple
 
 import psutil
 import pytest
 import requests
+
 try:
     from tests.support import process_guard as pg  # pytest-run path
 except Exception:
@@ -104,7 +104,7 @@ def extract_model_size(model_name: str) -> str:
         r'Phi-3-mini',  # Special case: Phi-3-mini = ~4B
         r'Qwen2\.5-(\d+(?:\.\d+)?)B', # Qwen2.5-0.5B
     ]
-    
+
     for pattern in size_patterns:
         match = re.search(pattern, model_name)
         if match:
@@ -114,7 +114,7 @@ def extract_model_size(model_name: str) -> str:
                 return f"{match.group(1)}B"  # Extract from Qwen2.5-0.5B
             else:
                 return match.group(1)
-    
+
     return "unknown"
 
 
@@ -262,13 +262,13 @@ def get_safe_models_for_system() -> List[Tuple[str, str, int]]:
 
     # Keep 4GB headroom as hard minimum
     max_usable_gb = min(available_ram_gb * safety_factor, total_ram_gb - 4)
-    
+
     logger.info(f"System RAM: {total_ram_gb}GB total, {available_ram_gb}GB available")
     logger.info(f"Safe limit for model testing: {max_usable_gb:.1f}GB")
-    
+
     safe_models = []
     all_models = get_available_models()
-    
+
     for model in all_models:
         size_str = extract_model_size(model)
         required_ram = estimate_required_ram_gb(model, size_str)
@@ -278,10 +278,10 @@ def get_safe_models_for_system() -> List[Tuple[str, str, int]]:
             logger.info(f"✅ {model} ({size_str}) - fits in {required_ram}GB")
         else:
             logger.warning(f"⏭️  Skipping {model} ({size_str}) - needs {required_ram}GB, have {max_usable_gb:.1f}GB")
-    
+
     if not safe_models:
         pytest.skip("No models fit in available system RAM")
-    
+
     return safe_models
 
 
@@ -301,7 +301,7 @@ def chat_completion_request(model_name: str, prompt: str, max_tokens: int = 150)
         "max_tokens": max_tokens,
         "stream": False
     }
-    
+
     try:
         response = requests.post(
             f"{SERVER_BASE_URL}/v1/chat/completions",
@@ -319,29 +319,29 @@ def chat_completion_request(model_name: str, prompt: str, max_tokens: int = 150)
 def test_issue_14_self_conversation_regression_original(mlx_server, model_name: str, size_str: str, ram_needed: int):
     """
     Test Issue #14: Ensure models don't continue conversations autonomously.
-    
+
     This test verifies that models stop cleanly after their response without
     generating additional conversation turns like "You:", "Human:", etc.
     """
     logger.info(f"🦫 Testing Issue #14 with {model_name} ({size_str}, {ram_needed}GB)")
-    
+
     # Use constrained prompt to encourage natural stopping
     test_prompt = "Write a short story about a friendly dragon in exactly 50 words."
-    
+
     start_time = time.time()
     response = chat_completion_request(model_name, test_prompt, max_tokens=100)
     duration = time.time() - start_time
-    
+
     logger.info(f"⏱️  Response time: {duration:.2f}s")
     logger.info(f"📝 Response preview: {response[:100]}...")
-    
+
     # Check for Issue #14: self-conversation markers
     if has_self_conversation_markers(response):
         # Log the problematic response for debugging
         logger.error(f"❌ Self-conversation detected in {model_name}:")
         logger.error(f"Full response: {repr(response)}")
         pytest.fail(f"Issue #14 regression: {model_name} shows self-conversation markers")
-    
+
     logger.info(f"✅ {model_name}: No self-conversation detected - Issue #14 fix working!")
 
 
@@ -360,7 +360,7 @@ def find_existing_mlxk_servers() -> List[psutil.Process]:
 def cleanup_zombie_servers(port: int):
     """Clean up any zombie MLX Knife servers on the specified port."""
     logger.info(f"🧹 Checking for existing servers on port {port}")
-    
+
     # Check for processes using the port - handle macOS permission issues
     try:
         connections = psutil.net_connections(kind='inet')
@@ -368,13 +368,13 @@ def cleanup_zombie_servers(port: int):
         logger.warning(f"⚠️  Cannot scan network connections (permission denied): {e}")
         logger.info("🔧 Falling back to process-based cleanup only")
         connections = []
-    
+
     for conn in connections:
         if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
             try:
                 proc = psutil.Process(conn.pid)
                 logger.warning(f"⚠️  Found process {proc.pid} listening on port {port}: {proc.cmdline()}")
-                
+
                 if 'mlxk' in ' '.join(proc.cmdline()) and 'server' in ' '.join(proc.cmdline()):
                     logger.info(f"🛑 Terminating existing MLX Knife server {proc.pid}")
                     proc.terminate()
@@ -388,10 +388,10 @@ def cleanup_zombie_servers(port: int):
                 else:
                     logger.error(f"❌ Port {port} is occupied by non-MLX process {proc.pid}")
                     raise RuntimeError(f"Port {port} is busy with: {proc.cmdline()}")
-                    
+
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-    
+
     # Also check for any MLX Knife server processes (even if not on our port)
     existing_servers = find_existing_mlxk_servers()
     for server in existing_servers:
@@ -410,12 +410,12 @@ def cleanup_zombie_servers(port: int):
 
 class MLXKnifeServerManager:
     """Context manager for MLX Knife server lifecycle with zombie cleanup."""
-    
+
     def __init__(self, port: int = 8000):
         self.port = port
         self.process = None
         self.base_url = f"http://localhost:{port}"
-    
+
     def start_server(self) -> bool:
         """Start MLX Knife server and wait for it to be ready."""
         try:
@@ -426,14 +426,14 @@ class MLXKnifeServerManager:
                 pass
             # First, clean up any zombies or port conflicts
             cleanup_zombie_servers(self.port)
-            
+
             # Check if server is already running (after cleanup)
             if self.is_server_running():
                 logger.info("🟢 MLX Knife server already running")
                 return True
-            
+
             logger.info(f"🚀 Starting MLX Knife server on port {self.port}")
-            
+
             # Start server process - use sys.executable to ensure same Python env
             import sys
             self.process = subprocess.Popen(
@@ -445,25 +445,25 @@ class MLXKnifeServerManager:
             )
             # Track for robust cleanup on Ctrl-C or failures
             pg.register_popen(self.process, label="mlxk-server")
-            
+
             logger.info(f"📋 Started process PID: {self.process.pid}")
-            
+
             # Give it a moment to fail fast if there's an immediate error
             time.sleep(1)
             if self.process.poll() is not None:
                 stdout, stderr = self.process.communicate()
-                logger.error(f"❌ Server failed immediately:")
+                logger.error("❌ Server failed immediately:")
                 logger.error(f"stdout: {stdout}")
                 logger.error(f"stderr: {stderr}")
                 return False
-            
+
             # Wait for server to be ready (max 30 seconds)
             for _ in range(60):  # 30 seconds, 0.5s intervals
                 if self.is_server_running():
                     logger.info("✅ MLX Knife server is ready")
                     return True
                 time.sleep(0.5)
-            
+
             # Timeout - get final output
             stdout, stderr = "", ""
             if self.process:
@@ -474,20 +474,20 @@ class MLXKnifeServerManager:
                         stdout, stderr = self.process.communicate()
                 except subprocess.TimeoutExpired:
                     stdout, stderr = "timeout", "timeout"
-            
+
             logger.error("❌ Server failed to start within timeout")
             logger.error(f"Final stdout: {stdout}")
             logger.error(f"Final stderr: {stderr}")
             self.stop_server()
             return False
-            
+
         except Exception as e:
             import traceback
             logger.error(f"❌ Failed to start server: {e}")
             logger.error(f"Full traceback: {traceback.format_exc()}")
             self.stop_server()
             return False
-    
+
     def stop_server(self):
         """Stop MLX Knife server if running."""
         if self.process:
@@ -516,7 +516,7 @@ class MLXKnifeServerManager:
             except Exception:
                 pass
             self.process = None
-    
+
     def is_server_running(self) -> bool:
         """Check if server is running and healthy."""
         try:
@@ -524,12 +524,12 @@ class MLXKnifeServerManager:
             return response.status_code == 200
         except:
             return False
-    
+
     def __enter__(self):
         if not self.start_server():
             pytest.skip("Failed to start MLX Knife server")
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop_server()
 
@@ -552,29 +552,29 @@ def test_server_health(mlx_server):
 def test_issue_14_self_conversation_regression(mlx_server, model_name: str, size_str: str, ram_needed: int):
     """
     Test Issue #14: Ensure models don't continue conversations autonomously.
-    
+
     This test verifies that models stop cleanly after their response without
     generating additional conversation turns like "You:", "Human:", etc.
     """
     logger.info(f"🦫 Testing Issue #14 with {model_name} ({size_str}, {ram_needed}GB)")
-    
+
     # Use constrained prompt to encourage natural stopping
     test_prompt = "Write a short story about a friendly dragon in exactly 50 words."
-    
+
     start_time = time.time()
     response = chat_completion_request(model_name, test_prompt, max_tokens=100)
     duration = time.time() - start_time
-    
+
     logger.info(f"⏱️  Response time: {duration:.2f}s")
     logger.info(f"📝 Response preview: {response[:100]}...")
-    
+
     # Check for Issue #14: self-conversation markers
     if has_self_conversation_markers(response):
         # Log the problematic response for debugging
         logger.error(f"❌ Self-conversation detected in {model_name}:")
         logger.error(f"Full response: {repr(response)}")
         pytest.fail(f"Issue #14 regression: {model_name} shows self-conversation markers")
-    
+
     logger.info(f"✅ {model_name}: No self-conversation detected - Issue #14 fix working!")
 
 
@@ -593,7 +593,7 @@ def pytest_generate_tests(metafunc):
     if "model_name" in metafunc.fixturenames:
         # Only get models when actually running tests, not during import
         try:
-            with MLXKnifeServerManager() as server:
+            with MLXKnifeServerManager():
                 models = get_safe_models_for_system()
                 metafunc.parametrize("model_name,size_str,ram_needed", models)
         except Exception as e:
@@ -604,31 +604,31 @@ if __name__ == "__main__":
     # Quick smoke test - start server first
     print("🦫 MLX Knife Issue #14 Test - Smoke Test")
     print("=" * 50)
-    
+
     # Test server start directly without context manager
     manager = MLXKnifeServerManager()
     success = manager.start_server()
-    
+
     print(f"🏁 Server start result: {success}")
-    
+
     if success:
         try:
             models = get_safe_models_for_system()
             print(f"\n📊 Safe models for this system: {len(models)}")
-            
+
             total_ram = psutil.virtual_memory().total // (1024**3)
             available_ram = psutil.virtual_memory().available // (1024**3)
             print(f"💾 System RAM: {total_ram}GB total, {available_ram}GB available")
             print()
-            
+
             for model, size, ram in models:
                 print(f"  🎯 {model}")
                 print(f"     └─ Size: {size}, RAM needed: {ram}GB")
-            
-            print(f"\n🚀 Ready to run: pytest tests/integration/test_issue_14.py -v")
-        
+
+            print("\n🚀 Ready to run: pytest tests/integration/test_issue_14.py -v")
+
         finally:
             manager.stop_server()
-    
+
     else:
         print("💡 Check the logs above for server start failure details")

@@ -107,8 +107,7 @@ def test_stream_start_and_complete_logs(monkeypatch: pytest.MonkeyPatch, caplog:
             self.cleaned = True
 
         def generate_streaming(self, **_: object):
-            for token in self.tokens:
-                yield token
+            yield from self.tokens
 
         def get_effective_max_tokens(self, requested: int | None, interactive: bool = False) -> int:
             return requested or len(self.tokens)

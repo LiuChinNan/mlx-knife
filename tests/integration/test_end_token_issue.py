@@ -5,20 +5,20 @@ This test ensures that End-Tokens are handled consistently across different
 models and streaming modes using actual token metrics instead of word estimates.
 """
 
+import json
 import logging
+import math
+import os
 import signal
 import subprocess
 import time
-from typing import Dict, List, Tuple, Any
-import json
-import math
-import subprocess
 from functools import lru_cache
+from typing import Dict, List, Tuple
 
-import os
 import psutil
 import pytest
 import requests
+
 try:
     from tests.support import process_guard as pg  # pytest path
 except Exception:
@@ -65,12 +65,12 @@ MODEL_RAM_REQUIREMENTS_FP16 = {
 MODEL_END_TOKENS = {
     "llama": ["</s>", "<|end_of_text|>", "<|eot_id|>"],  # Llama-2/3.x tokens
     "mistral": ["</s>", "<|endoftext|>"],  # Mistral variants
-    "qwen": ["<|im_end|>", "<|endoftext|>", "<|end|>", "</s>"],  # Qwen variants  
+    "qwen": ["<|im_end|>", "<|endoftext|>", "<|end|>", "</s>"],  # Qwen variants
     "phi": ["<|endoftext|>", "<|end|>", "</s>"],  # Phi-3 variants
     "mixtral": ["</s>", "<|endoftext|>"],  # Mixtral (Mistral-based)
     "gpt-oss": ["<|return|>"],  # GPT-OSS reasoning models: <|end|> is NOT a stop token, only <|return|>
     "default": [  # Comprehensive catch-all list
-        "</s>", "<|im_end|>", "<|endoftext|>", "<|end_of_text|>", 
+        "</s>", "<|im_end|>", "<|endoftext|>", "<|end_of_text|>",
         "<|eot_id|>", "<|end|>", "<end>", "</end>", "<eos>", "</eos>",
         "<|assistant|>", "<|user|>", "<|system|>"
     ]
@@ -207,7 +207,7 @@ def get_model_disk_size_gb(model_name: str) -> float:
 def get_model_family(model_name: str) -> str:
     """Determine model family for End-Token selection."""
     model_lower = model_name.lower()
-    
+
     if 'llama' in model_lower:
         return 'llama'
     elif 'mistral' in model_lower and 'mixtral' not in model_lower:
@@ -289,17 +289,17 @@ def cleanup_zombie_servers(port: int):
 
 class MLXKnifeServerManager:
     """Context manager for MLX Knife server lifecycle with zombie cleanup."""
-    
+
     def __init__(self):
         self.process = None
-        
+
     def __enter__(self):
         self.start_server()
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop_server()
-        
+
     def start_server(self):
         """Start MLX Knife server."""
         # Ensure signal handlers are installed for robust cleanup (server-only)
@@ -319,9 +319,9 @@ class MLXKnifeServerManager:
         )
         # Track for robust cleanup on Ctrl-C
         pg.register_popen(self.process, label="mlxk-server")
-        
+
         # Wait for server to be ready
-        for attempt in range(30):
+        for _attempt in range(30):
             try:
                 response = requests.get(f"{SERVER_BASE_URL}/health", timeout=2)
                 if response.status_code == 200:
@@ -330,9 +330,9 @@ class MLXKnifeServerManager:
             except:
                 pass
             time.sleep(1)
-        
+
         raise RuntimeError("Server failed to start within 30 seconds")
-        
+
     def stop_server(self):
         """Stop MLX Knife server with proper cleanup."""
         if self.process:
@@ -363,15 +363,15 @@ class MLXKnifeServerManager:
                 pg.unregister(self.process.pid)
             except Exception:
                 pass
-            
+
             # Wait a bit for port cleanup
             time.sleep(2)
-            
+
             # Verify port is actually free
-            for attempt in range(5):
+            for _attempt in range(5):
                 try:
-                    response = requests.get(f"{SERVER_BASE_URL}/health", timeout=1)
-                    if attempt == 4:
+                    requests.get(f"{SERVER_BASE_URL}/health", timeout=1)
+                    if _attempt == 4:
                         logger.warning("Port may still be occupied after server shutdown")
                     time.sleep(1)
                 except requests.exceptions.RequestException:
@@ -397,7 +397,7 @@ def get_safe_models_for_system() -> List[Tuple[str, str, int]]:
     models = get_available_models()
     available_ram = get_available_ram_gb()
     safe_models = []
-    
+
     for model in models:
         size_str = extract_model_size(model)
         ram_needed = estimate_required_ram_gb(model, size_str)
@@ -425,7 +425,7 @@ def get_model_context_length(model_name: str) -> int:
 def get_model_aware_token_targets(model_name: str, model_size: str) -> Dict[str, int]:
     """Get realistic token targets based on actual model capabilities."""
     context_length = get_model_context_length(model_name)
-    
+
     # Calculate reasonable target based on model size + context
     if model_size in ["1B", "3B"]:
         target_tokens = min(512, context_length // 8)
@@ -435,13 +435,13 @@ def get_model_aware_token_targets(model_name: str, model_size: str) -> Dict[str,
         target_tokens = min(2048, context_length // 4)
     else:
         target_tokens = min(800, context_length // 6)
-    
+
     # Model-specific adjustments for known behaviors
     model_lower = model_name.lower()
     if 'phi-3' in model_lower:
         # Phi-3 models tend to be very concise, adjust expectations
         target_tokens = min(target_tokens, 200)
-    
+
     return {
         "target_tokens": target_tokens,
         "min_tokens": target_tokens // 3,  # Allow 33% variance
@@ -451,7 +451,7 @@ def get_model_aware_token_targets(model_name: str, model_size: str) -> Dict[str,
 
 def create_adaptive_trilogy_prompt(model_size: str, target_tokens: int) -> str:
     """Create trilogy prompt adapted to model capabilities."""
-    
+
     base_plot = '''Here is the outline for fantasy trilogy "EMBERS OF THE FORGOTTEN":
 
 **MAIN CHARACTERS:**
@@ -472,18 +472,18 @@ def create_adaptive_trilogy_prompt(model_size: str, target_tokens: int) -> str:
 - Use poetic, mythic language
 - Target approximately {target_tokens} tokens
 - End with him seeing Veyra (Valley of Faces) in the distance'''
-    
+
     elif model_size in ["4B", "7B"]:
-        task = f'''**YOUR TASK:** Write the opening chapter of Book I: "The Poet Who Burned" 
+        task = f'''**YOUR TASK:** Write the opening chapter of Book I: "The Poet Who Burned"
 - Focus on Kaelen's exile from Celestine after Lirien's execution
 - Include his emotional journey and Soulfire powers
 - Use poetic, mythic language with deep inner rhythm
 - Target approximately {target_tokens} tokens (1000-1500 words)
 - End with his arrival at Veyra (Valley of Faces)'''
-    
+
     else:  # 24B, 30B, 70B
         task = f'''**YOUR TASK:** Write the complete first chapter of Book I: "The Poet Who Burned"
-- Focus on Kaelen's exile from Celestine after his beloved Lirien's execution  
+- Focus on Kaelen's exile from Celestine after his beloved Lirien's execution
 - Include his arrival at Veyra (Valley of Faces) with 30 lost masks
 - Show his Soulfire powers and deep emotional development
 - Use poetic, mythic language with deep inner rhythm
@@ -502,17 +502,17 @@ def make_chat_request(model_name: str, prompt: str, stream: bool = False, timeou
         "stream": stream,
         "temperature": 0.7
     }
-    
+
     response = requests.post(
         f"{SERVER_BASE_URL}/v1/chat/completions",
         json=payload,
         timeout=timeout,
         stream=stream
     )
-    
+
     if not response.ok:
         raise RuntimeError(f"Request failed: {response.status_code} - {response.text}")
-    
+
     if stream:
         # Handle streaming response
         content = ""
@@ -538,12 +538,12 @@ def contains_end_tokens(text: str, model_name: str) -> List[str]:
     """Check if text contains any End-Tokens for the given model."""
     model_family = get_model_family(model_name)
     end_tokens = MODEL_END_TOKENS.get(model_family, MODEL_END_TOKENS["default"])
-    
+
     found_tokens = []
     for token in end_tokens:
         if token in text:
             found_tokens.append(token)
-    
+
     return found_tokens
 
 
@@ -564,7 +564,7 @@ def pytest_generate_tests(metafunc):
     """Dynamic test parametrization to avoid import-time server calls."""
     if "model_name" in metafunc.fixturenames:
         try:
-            with MLXKnifeServerManager() as server:
+            with MLXKnifeServerManager():
                 models = get_safe_models_for_system()
                 metafunc.parametrize("model_name,size_str,ram_needed", models)
         except Exception as e:
@@ -576,99 +576,99 @@ def pytest_generate_tests(metafunc):
 def test_non_streaming_end_tokens(model_name, size_str, ram_needed):
     """
     Test Issue #20: Non-streaming mode should show End-Tokens (EXPECTED TO FAIL).
-    
+
     This test validates that non-streaming responses contain visible End-Tokens,
     proving the server-side filtering bug in generate_batch().
-    
+
     Expected result: FAIL (End-Tokens visible) - this confirms Issue #20.
     """
     logger.info(f"🔍 Testing NON-STREAMING End-Tokens with {model_name} ({size_str}, {ram_needed}GB RAM)")
-    
-    with MLXKnifeServerManager() as server:
+
+    with MLXKnifeServerManager():
         # Get model-specific token targets
         token_specs = get_model_aware_token_targets(model_name, size_str)
         logger.info(f"Token targets: {token_specs}")
-        
+
         # Create adaptive prompt (no max_tokens - let model use natural stopping)
         prompt = create_adaptive_trilogy_prompt(size_str, token_specs["target_tokens"])
-        
+
         logger.info("🚫 Testing NON-STREAMING mode (should show End-Tokens)...")
-        
+
         response_content = make_chat_request(model_name, prompt, stream=False, timeout=300)
-        
+
         # Basic validation
         assert response_content.strip(), "Non-streaming returned empty response"
-        
+
         # Token count validation
         estimated_tokens = estimate_token_count(response_content)
         logger.info(f"Non-streaming response: ~{estimated_tokens} tokens")
         logger.info(f"Response ends with: '{response_content[-100:]}'" if len(response_content) > 100 else f"Full response end: '{response_content}'")
-        
+
         # Should generate reasonable amount
         min_expected = token_specs["min_tokens"]
         assert estimated_tokens >= min_expected, \
             f"Non-streaming generated too few tokens: {estimated_tokens} < {min_expected}"
-        
+
         # Issue #20 Check: Non-streaming SHOULD contain End-Tokens (this is the bug)
         found_end_tokens = contains_end_tokens(response_content, model_name)
-        
+
         if found_end_tokens:
             logger.error(f"❌ CONFIRMED Issue #20: Non-streaming contains End-Tokens: {found_end_tokens}")
             logger.error(f"Raw response end: {repr(response_content[-50:])}")
             # This SHOULD fail - it confirms Issue #20
             assert False, f"Issue #20 CONFIRMED: Non-streaming shows End-Tokens {found_end_tokens}"
         else:
-            logger.warning(f"⚠️  UNEXPECTED: Non-streaming clean (no End-Tokens found)")
-            logger.info(f"✅ Non-streaming mode unexpectedly passed (no Issue #20 detected)")
+            logger.warning("⚠️  UNEXPECTED: Non-streaming clean (no End-Tokens found)")
+            logger.info("✅ Non-streaming mode unexpectedly passed (no Issue #20 detected)")
 
 
-@pytest.mark.server  
+@pytest.mark.server
 @pytest.mark.timeout(300)  # 5 minute timeout for large models
 def test_streaming_end_tokens(model_name, size_str, ram_needed):
     """
     Test Issue #20: Streaming mode should filter End-Tokens (EXPECTED TO PASS).
-    
+
     This test validates that streaming responses properly filter End-Tokens,
     proving the streaming pipeline works correctly.
-    
+
     Expected result: PASS (End-Tokens filtered) - this shows streaming works correctly.
     """
     logger.info(f"🔍 Testing STREAMING End-Tokens with {model_name} ({size_str}, {ram_needed}GB RAM)")
-    
-    with MLXKnifeServerManager() as server:
-        # Get model-specific token targets  
+
+    with MLXKnifeServerManager():
+        # Get model-specific token targets
         token_specs = get_model_aware_token_targets(model_name, size_str)
         logger.info(f"Token targets: {token_specs}")
-        
+
         # Create adaptive prompt (no max_tokens - let model use natural stopping)
         prompt = create_adaptive_trilogy_prompt(size_str, token_specs["target_tokens"])
-        
+
         logger.info("✅ Testing STREAMING mode (should filter End-Tokens)...")
-        
+
         response_content = make_chat_request(model_name, prompt, stream=True, timeout=300)
-        
+
         # Basic validation
         assert response_content.strip(), "Streaming returned empty response"
-        
+
         # Token count validation
         estimated_tokens = estimate_token_count(response_content)
         logger.info(f"Streaming response: ~{estimated_tokens} tokens")
         logger.info(f"Response ends with: '{response_content[-100:]}'" if len(response_content) > 100 else f"Full response end: '{response_content}'")
-        
+
         # Should generate reasonable amount
         min_expected = token_specs["min_tokens"]
         assert estimated_tokens >= min_expected, \
             f"Streaming generated too few tokens: {estimated_tokens} < {min_expected}"
-        
+
         # Issue #20 Check: Streaming should NOT contain End-Tokens (correct behavior)
         found_end_tokens = contains_end_tokens(response_content, model_name)
-        
+
         if found_end_tokens:
             logger.error(f"❌ UNEXPECTED: Streaming contains End-Tokens: {found_end_tokens}")
             logger.error(f"Raw response end: {repr(response_content[-50:])}")
             assert False, f"Streaming unexpectedly shows End-Tokens {found_end_tokens}"
         else:
-            logger.info(f"✅ Streaming mode correctly filtered End-Tokens")
+            logger.info("✅ Streaming mode correctly filtered End-Tokens")
 
 
 @pytest.mark.server
@@ -676,74 +676,74 @@ def test_streaming_end_tokens(model_name, size_str, ram_needed):
 def test_end_token_consistency_comparison(model_name, size_str, ram_needed):
     """
     Test Issue #20: Direct comparison of streaming vs non-streaming End-Token handling.
-    
+
     This test runs both modes and compares their End-Token behavior to document
     the exact differences for Issue #20 analysis.
-    
+
     Expected pattern:
-    - Non-streaming: Contains End-Tokens (Issue #20 bug) 
+    - Non-streaming: Contains End-Tokens (Issue #20 bug)
     - Streaming: Clean responses (correct behavior)
     """
     logger.info(f"🔍 COMPARISON TEST: {model_name} ({size_str}, {ram_needed}GB RAM)")
     logger.info("="*80)
-    
-    with MLXKnifeServerManager() as server:
+
+    with MLXKnifeServerManager():
         # Get model-specific token targets
         token_specs = get_model_aware_token_targets(model_name, size_str)
-        
+
         # Create adaptive prompt (no max_tokens)
         prompt = create_adaptive_trilogy_prompt(size_str, token_specs["target_tokens"])
-        
+
         responses = {}
         end_token_results = {}
-        
+
         # Test both modes
         for stream_mode in [False, True]:
             mode_name = "streaming" if stream_mode else "non-streaming"
             logger.info(f"\n📡 Testing {mode_name.upper()} mode...")
-            
+
             response_content = make_chat_request(model_name, prompt, stream=stream_mode, timeout=300)
             responses[stream_mode] = response_content
-            
+
             # Check End-Tokens
             found_end_tokens = contains_end_tokens(response_content, model_name)
             end_token_results[stream_mode] = found_end_tokens
-            
+
             estimated_tokens = estimate_token_count(response_content)
             logger.info(f"{mode_name} response: ~{estimated_tokens} tokens")
             logger.info(f"{mode_name} ends with: '{response_content[-80:]}'" if len(response_content) > 80 else f"Full: '{response_content}'")
-            
+
             if found_end_tokens:
                 logger.error(f"❌ {mode_name} contains End-Tokens: {found_end_tokens}")
             else:
                 logger.info(f"✅ {mode_name} clean (no End-Tokens)")
-        
+
         # Issue #20 Pattern Analysis
         logger.info(f"\n📊 ISSUE #20 ANALYSIS for {model_name}:")
         logger.info("="*80)
-        
+
         non_stream_tokens = end_token_results[False]
         stream_tokens = end_token_results[True]
-        
+
         logger.info(f"Non-streaming End-Tokens: {non_stream_tokens if non_stream_tokens else 'None'}")
         logger.info(f"Streaming End-Tokens:     {stream_tokens if stream_tokens else 'None'}")
-        
+
         # Issue #20 pattern detection
         if non_stream_tokens and not stream_tokens:
-            logger.error(f"🎯 ISSUE #20 CONFIRMED!")
+            logger.error("🎯 ISSUE #20 CONFIRMED!")
             logger.error(f"   - Non-streaming shows End-Tokens: {non_stream_tokens}")
-            logger.error(f"   - Streaming filters correctly: Clean")
+            logger.error("   - Streaming filters correctly: Clean")
             issue_20_detected = True
         elif not non_stream_tokens and not stream_tokens:
-            logger.warning(f"⚠️  Both modes clean - Issue #20 not detected")
+            logger.warning("⚠️  Both modes clean - Issue #20 not detected")
             issue_20_detected = False
         elif non_stream_tokens and stream_tokens:
-            logger.error(f"🚨 Both modes show End-Tokens - different issue?")
+            logger.error("🚨 Both modes show End-Tokens - different issue?")
             issue_20_detected = False
         else:
-            logger.warning(f"🤔 Unexpected pattern - investigate further")
+            logger.warning("🤔 Unexpected pattern - investigate further")
             issue_20_detected = False
-        
+
         # This test is purely documentary - it doesn't fail, just reports findings
         logger.info(f"\n📝 Issue #20 Status: {'CONFIRMED' if issue_20_detected else 'NOT DETECTED'}")
         logger.info("="*80)
@@ -751,7 +751,7 @@ def test_end_token_consistency_comparison(model_name, size_str, ram_needed):
 
 if __name__ == "__main__":
     # Quick test run
-    with MLXKnifeServerManager() as server:
+    with MLXKnifeServerManager():
         models = get_safe_models_for_system()
         print(f"Found {len(models)} safe models for testing:")
         for model, size, ram in models:

@@ -17,16 +17,16 @@ import os
 import signal
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict
 
 import psutil
 
 _registry_lock = threading.RLock()
-_registry: Dict[int, Dict[str, Optional[int]]] = {}
+_registry: Dict[int, Dict[str, int | None]] = {}
 _handlers_installed = False
 
 
-def _safe_get_pgid(pid: int) -> Optional[int]:
+def _safe_get_pgid(pid: int) -> int | None:
     try:
         return os.getpgid(pid)
     except Exception:
@@ -89,7 +89,7 @@ def _kill_pid_tree(pid: int, timeout: float = 1.0) -> None:
         pass
 
 
-def kill_all(label_filter: Optional[str] = None) -> None:
+def kill_all(label_filter: str | None = None) -> None:
     """Kill all tracked processes (optionally filtered by label)."""
     with _registry_lock:
         items = list(_registry.items())
@@ -128,17 +128,17 @@ def _signal_handler_factory(prev_handler):
             if callable(prev_handler):
                 try:
                     prev_handler(signum, frame)
-                    return
                 except Exception:
                     # If previous handler was Python's default raising KeyboardInterrupt,
                     # re-raise to allow pytest to handle interruption.
                     raise
-            # If default/ignore, re-send signal to self to honor semantics
-            try:
-                signal.signal(signum, signal.SIG_DFL)
-                os.kill(os.getpid(), signum)
-            except Exception:
-                pass
+            else:
+                # If default/ignore, re-send signal to self to honor semantics
+                try:
+                    signal.signal(signum, signal.SIG_DFL)
+                    os.kill(os.getpid(), signum)
+                except Exception:
+                    pass
     return _handler
 
 

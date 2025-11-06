@@ -6,11 +6,9 @@ Tests the command-line interface functionality:
 - Command dispatch
 - Help and version output
 """
+from unittest.mock import patch
+
 import pytest
-import argparse
-from unittest.mock import patch, MagicMock
-import sys
-import os
 
 # Import the module under test
 from mlx_knife.cli import main
@@ -34,7 +32,7 @@ class TestMainFunctionBasic:
                     main()
                 # Version should exit cleanly
                 assert exc_info.value.code in [0, None]
-        except Exception as e:
+        except Exception:
             # It's OK if version parsing isn't fully implemented yet
             pass
 
@@ -102,7 +100,7 @@ class TestMainFunction:
             with patch('sys.argv', ['mlxk']):
                 # The CLI shows help when no args are provided - this is valid behavior
                 main()  # Should complete successfully showing help
-        except SystemExit as e:
+        except SystemExit:
             # Also valid - some CLIs exit after showing help
             pass
         except Exception as e:
@@ -195,7 +193,7 @@ class TestHealthCommandDefaultBehavior:
             with patch('sys.argv', ['mlxk', 'health', '--all']):
                 main()
             
-            # Should have called check_all_models_health  
+            # Should have called check_all_models_health
             assert mock_check_all.called
             mock_check_all.assert_called_once()
         except SystemExit:

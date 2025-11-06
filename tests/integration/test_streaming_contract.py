@@ -13,8 +13,7 @@ class StubRunner:
         self.tokens = tokens
 
     def generate_streaming(self, **_: object):
-        for token in self.tokens:
-            yield token
+        yield from self.tokens
 
     def get_effective_max_tokens(self, requested: int | None, interactive: bool = False) -> int:
         return requested or 32

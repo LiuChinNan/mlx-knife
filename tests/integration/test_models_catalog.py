@@ -4,8 +4,7 @@ from typing import Dict, List
 import pytest
 from fastapi.testclient import TestClient
 
-from mlx_knife import server
-from mlx_knife import cache_utils
+from mlx_knife import cache_utils, server
 
 
 @pytest.fixture

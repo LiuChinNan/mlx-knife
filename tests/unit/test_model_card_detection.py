@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from mlx_knife.cache_utils import detect_framework, detect_model_type, run_model
 
 

@@ -2,17 +2,17 @@
 Pytest configuration and shared fixtures for MLX Knife tests.
 """
 import os
-import tempfile
 import shutil
-import pytest
-import subprocess
 import signal
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Generator, List
+
 import psutil
-import signal
+import pytest
 
 
 def _safe_detach_process_group():

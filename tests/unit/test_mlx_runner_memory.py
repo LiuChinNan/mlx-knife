@@ -8,8 +8,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch, PropertyMock
-import gc
+from unittest.mock import MagicMock, patch
 
 
 class TestMLXRunnerMemoryManagement(unittest.TestCase):
@@ -57,7 +56,7 @@ class TestMLXRunnerMemoryManagement(unittest.TestCase):
         
         # Test that exception is propagated and cleanup happens
         with self.assertRaises(RuntimeError) as cm:
-            with MLXRunner("test_model", verbose=False) as runner:
+            with MLXRunner("test_model", verbose=False):
                 pass  # Should never reach here
         
         self.assertIn("Failed to load model", str(cm.exception))
@@ -463,7 +462,7 @@ class TestMLXRunnerContextAwareLimits(unittest.TestCase):
         effective = runner.get_effective_max_tokens(8000, interactive=True)
         self.assertEqual(effective, 4096)  # Limited by model context
         
-        effective = runner.get_effective_max_tokens(2000, interactive=True)  
+        effective = runner.get_effective_max_tokens(2000, interactive=True)
         self.assertEqual(effective, 2000)  # User request is smaller
     
     @patch('mlx_knife.mlx_runner.get_model_context_length')
