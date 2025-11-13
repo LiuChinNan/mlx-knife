@@ -173,7 +173,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Project dependence
 
 Read the dependence document first:
-- `./AGENTS_GENERIC_20251012.md`
+- `./AGENTS_GENERIC_20251113.md`
 - `./AGENTS_BASH_GENERIC_20250716.md`
 - `./AGENTS_PYTHON_GENERIC_20251012.md`
 
